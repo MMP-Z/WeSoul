@@ -6,7 +6,8 @@ import { advisorService } from '../services/advisorService';
 import { Booking, BookingStatus } from '../types';
 import { Navbar } from '../components/Navbar';
 
-import { MessageCircle, Clock, Calendar, Star, X } from 'lucide-react';
+import { MessageCircle, Clock, Calendar, Star, X, Pencil } from 'lucide-react';
+import { formatDate } from '../utils/dateFormatter';
 
 export const History: React.FC = () => {
     const [bookings, setBookings] = useState<Booking[]>([]);
@@ -17,6 +18,7 @@ export const History: React.FC = () => {
     const [rating, setRating] = useState(5);
     const [comment, setComment] = useState('');
     const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+    const [isLoadingReview, setIsLoadingReview] = useState(false);
 
     useEffect(() => {
         const unsubscribe = authService.onAuthStateChanged(async (user) => {
@@ -48,26 +50,48 @@ export const History: React.FC = () => {
         }
     };
 
-    const openReviewModal = (booking: Booking) => {
+    const openReviewModal = async (booking: Booking) => {
         setSelectedBookingForReview(booking);
-        setRating(5);
-        setComment('');
         setShowReviewModal(true);
+
+        if (booking.isReviewed) {
+            setIsLoadingReview(true);
+            try {
+                const review = await advisorService.getReview(booking.advisorId, booking.id);
+                if (review) {
+                    setRating(review.rating);
+                    setComment(review.comment);
+                }
+            } catch (error) {
+                console.error("Error fetching review:", error);
+            } finally {
+                setIsLoadingReview(false);
+            }
+        } else {
+            setRating(5);
+            setComment('');
+        }
     };
 
     const handleSubmitReview = async () => {
         if (!selectedBookingForReview) return;
         setIsSubmittingReview(true);
         try {
-            await advisorService.addReview(selectedBookingForReview.advisorId, {
+            const reviewData = {
                 id: selectedBookingForReview.id,
                 user: selectedBookingForReview.userName || 'Anonymous',
                 rating,
                 comment,
                 date: new Date().toISOString()
-            });
+            };
 
-            await bookingService.markAsReviewed(selectedBookingForReview.id);
+            if (selectedBookingForReview.isReviewed) {
+                await advisorService.updateReview(selectedBookingForReview.advisorId, reviewData);
+                // Toast success?
+            } else {
+                await advisorService.addReview(selectedBookingForReview.advisorId, reviewData);
+                await bookingService.markAsReviewed(selectedBookingForReview.id);
+            }
 
             setBookings(bookings.map(b =>
                 b.id === selectedBookingForReview.id ? { ...b, isReviewed: true } : b
@@ -106,59 +130,71 @@ export const History: React.FC = () => {
                 ) : (
                     <div className="space-y-4">
                         {bookings.map((booking) => (
-                            <div key={booking.id} className="bg-white border border-gray-200 rounded-xl p-6 hover:shadow-md transition-all duration-200">
-                                <div className="flex flex-col md:flex-row justify-between gap-4">
-                                    <div className="flex gap-4">
+                            <div key={booking.id} className="bg-white border border-gray-100 rounded-2xl p-4 hover:shadow-md transition-all duration-200">
+                                <div className="flex items-start justify-between gap-4">
+                                    <div className="flex gap-3">
                                         <img
                                             src={booking.advisorAvatar}
                                             alt={booking.advisorName}
-                                            className="w-16 h-16 rounded-xl object-cover border border-gray-100 shadow-sm"
+                                            className="w-12 h-12 rounded-full object-cover border border-gray-100 shadow-sm shrink-0"
                                         />
                                         <div>
-                                            <h3 className="font-bold text-lg text-gray-900 mb-1">{booking.advisorName}</h3>
-                                            <div className="flex items-center gap-4 text-sm text-gray-500">
+                                            <h3 className="font-bold text-gray-900 leading-tight mb-1">{booking.advisorName}</h3>
+                                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
                                                 <span className="flex items-center gap-1">
-                                                    <Calendar className="w-4 h-4 text-gray-400" />
-                                                    {new Date(booking.date).toLocaleDateString('vi-VN')}
+                                                    <Calendar className="w-3.5 h-3.5" />
+                                                    {formatDate(booking.date)}
                                                 </span>
                                                 <span className="flex items-center gap-1">
-                                                    <Clock className="w-4 h-4 text-gray-400" />
+                                                    <Clock className="w-3.5 h-3.5" />
                                                     1 lần xem
                                                 </span>
                                             </div>
                                         </div>
                                     </div>
 
-                                    <div className="flex flex-col items-end gap-2 text-right">
-                                        <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(booking.status)}`}>
+                                    <div className="text-right shrink-0">
+                                        <div className="font-bold text-indigo-600 mb-1">
+                                            {booking.totalPrice.toLocaleString('vi-VN')} đ
+                                        </div>
+                                        <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border ${getStatusColor(booking.status)}`}>
                                             {booking.status}
                                         </span>
-                                        <span className="font-mono text-indigo-600 font-bold mb-1">
-                                            {booking.totalPrice.toLocaleString('vi-VN')} đ
-                                        </span>
-
-                                        <div className="flex gap-2">
-                                            {(booking.status === BookingStatus.CONFIRMED || booking.status === BookingStatus.COMPLETED) && (
-                                                <button
-                                                    onClick={() => navigate(`/messages?bookingId=${booking.id}`)}
-                                                    className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-sm transition-colors border border-indigo-200 font-medium"
-                                                >
-                                                    <MessageCircle className="w-4 h-4" />
-                                                    Nhắn tin
-                                                </button>
-                                            )}
-                                            {booking.status === BookingStatus.COMPLETED && !booking.isReviewed && (
-                                                <button
-                                                    onClick={() => openReviewModal(booking)}
-                                                    className="flex items-center gap-2 px-3 py-1.5 bg-yellow-50 hover:bg-yellow-100 text-yellow-700 rounded-lg text-sm transition-colors border border-yellow-200 font-medium"
-                                                >
-                                                    <Star className="w-4 h-4" />
-                                                    Đánh giá
-                                                </button>
-                                            )}
-                                        </div>
                                     </div>
                                 </div>
+
+                                {/* Action Buttons Row */}
+                                {(booking.status === BookingStatus.CONFIRMED || booking.status === BookingStatus.COMPLETED) && (
+                                    <div className="mt-3 pt-3 border-t border-gray-50 flex justify-end gap-2">
+                                        <button
+                                            onClick={() => navigate(`/messages?bookingId=${booking.id}`)}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg text-xs font-bold transition-colors"
+                                        >
+                                            <MessageCircle className="w-3.5 h-3.5" />
+                                            Nhắn tin
+                                        </button>
+
+                                        {booking.status === BookingStatus.COMPLETED && !booking.isReviewed && (
+                                            <button
+                                                onClick={() => openReviewModal(booking)}
+                                                className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-50 hover:bg-yellow-100 text-yellow-700 rounded-lg text-xs font-bold transition-colors"
+                                            >
+                                                <Star className="w-3.5 h-3.5" />
+                                                Đánh giá
+                                            </button>
+                                        )}
+
+                                        {booking.status === BookingStatus.COMPLETED && booking.isReviewed && (
+                                            <button
+                                                onClick={() => openReviewModal(booking)}
+                                                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-lg text-xs font-bold transition-colors"
+                                            >
+                                                <Pencil className="w-3.5 h-3.5" />
+                                                Sửa đánh giá
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>
@@ -179,20 +215,28 @@ export const History: React.FC = () => {
                         </div>
 
                         <div className="flex flex-col items-center mb-6">
-                            <div className="flex gap-2 mb-4">
-                                {[1, 2, 3, 4, 5].map((star) => (
-                                    <button
-                                        key={star}
-                                        onClick={() => setRating(star)}
-                                        className={`transition-transform hover:scale-110 ${rating >= star ? 'text-yellow-400' : 'text-gray-200'}`}
-                                    >
-                                        <Star className="w-8 h-8 fill-current" />
-                                    </button>
-                                ))}
-                            </div>
-                            <p className="text-sm font-medium text-gray-600">
-                                {rating === 5 ? 'Tuyệt vời!' : rating === 4 ? 'Rất tốt' : rating === 3 ? 'Bình thường' : rating === 2 ? 'Tệ' : 'Rất tệ'}
-                            </p>
+                            {isLoadingReview ? (
+                                <div className="py-8">
+                                    <div className="animate-spin w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full"></div>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="flex gap-2 mb-4">
+                                        {[1, 2, 3, 4, 5].map((star) => (
+                                            <button
+                                                key={star}
+                                                onClick={() => setRating(star)}
+                                                className={`transition-transform hover:scale-110 ${rating >= star ? 'text-yellow-400' : 'text-gray-200'}`}
+                                            >
+                                                <Star className="w-8 h-8 fill-current" />
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <p className="text-sm font-medium text-gray-600">
+                                        {rating === 5 ? 'Tuyệt vời!' : rating === 4 ? 'Rất tốt' : rating === 3 ? 'Bình thường' : rating === 2 ? 'Tệ' : 'Rất tệ'}
+                                    </p>
+                                </>
+                            )}
                         </div>
 
                         <textarea

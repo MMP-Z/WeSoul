@@ -144,4 +144,7 @@ export interface AdvisorComment {
   userAvatar: string;
   content: string;
   timestamp: any; // Firestore Timestamp
+  likes?: number;
+  likedBy?: string[]; // Array of user IDs who liked the comment
+  replyToId?: string; // ID of the parent comment if this is a reply
 }

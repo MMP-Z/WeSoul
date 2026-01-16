@@ -17,6 +17,7 @@ import {
     MessageCircle, Calendar, Star, MapPin, Image as ImageIcon, X, ChevronLeft, ChevronRight, Globe, Award, Copy, Check, Send, BadgeCheck, Plus, Trash2, DollarSign, Sparkles, UserPlus, UserCheck
 } from 'lucide-react';
 import { Advisor, AdvisorPost, AdvisorCategory, AdvisorStatus, AdvisorServiceItem, UserProfile } from '../types';
+import { formatDate } from '../utils/dateFormatter';
 
 export const AdvisorProfile: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -57,8 +58,8 @@ export const AdvisorProfile: React.FC = () => {
     // Create Post State (Only for advisor owner, simulated)
     const [newPostContent, setNewPostContent] = useState('');
     const [isPosting, setIsPosting] = useState(false);
-    const [selectedImage, setSelectedImage] = useState<File | null>(null);
-    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [selectedImages, setSelectedImages] = useState<File[]>([]);
+    const [previewUrls, setPreviewUrls] = useState<string[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Edit Profile Avatar State
@@ -160,8 +161,9 @@ export const AdvisorProfile: React.FC = () => {
                             workHours: 'Cả ngày'
                         };
                         setAdvisor(tempUser);
-                        // For regular users, maybe we don't have posts yet, or we can fetch their posts if supported
-                        setPosts([]);
+                        // Fetch posts for this user (same logic as advisors since they share the collection)
+                        const userPosts = await advisorPostService.getPostsByAdvisor(userProfile.uid);
+                        setPosts(userPosts);
                     } else {
                         // navigate('/market');
                     }
@@ -284,17 +286,16 @@ export const AdvisorProfile: React.FC = () => {
     };
 
     const handleCreatePost = async () => {
-        if ((!newPostContent.trim() && !selectedImage) || !advisor) return;
+        if ((!newPostContent.trim() && selectedImages.length === 0) || !advisor) return;
 
         setIsPosting(true);
         try {
             let imageUrls: string[] = [];
 
-            if (selectedImage) {
-                const url = await imageUploadService.uploadImage(selectedImage);
-                if (url) {
-                    imageUrls.push(url);
-                }
+            if (selectedImages.length > 0) {
+                const uploadPromises = selectedImages.map(file => imageUploadService.uploadImage(file));
+                const results = await Promise.all(uploadPromises);
+                imageUrls = results.filter((url): url is string => url !== null);
             }
 
             await advisorPostService.createPost({
@@ -307,8 +308,8 @@ export const AdvisorProfile: React.FC = () => {
             });
 
             setNewPostContent('');
-            setSelectedImage(null);
-            setPreviewUrl(null);
+            setSelectedImages([]);
+            setPreviewUrls([]);
 
             // Refresh posts
             if (advisor) {
@@ -324,16 +325,22 @@ export const AdvisorProfile: React.FC = () => {
     };
 
     const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            const file = e.target.files[0];
-            setSelectedImage(file);
-            setPreviewUrl(URL.createObjectURL(file));
+        if (e.target.files && e.target.files.length > 0) {
+            const newFiles = Array.from(e.target.files);
+            const newUrls = newFiles.map(file => URL.createObjectURL(file));
+
+            setSelectedImages(prev => [...prev, ...newFiles]);
+            setPreviewUrls(prev => [...prev, ...newUrls]);
         }
     };
 
-    const removeImage = () => {
-        setSelectedImage(null);
-        setPreviewUrl(null);
+    const removeImage = (index: number) => {
+        setSelectedImages(prev => prev.filter((_, i) => i !== index));
+        setPreviewUrls(prev => {
+            const newUrls = [...prev];
+            URL.revokeObjectURL(newUrls[index]);
+            return newUrls.filter((_, i) => i !== index);
+        });
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
         }
@@ -683,7 +690,7 @@ export const AdvisorProfile: React.FC = () => {
                                             </div>
                                             <p className="text-gray-600 text-sm mb-1 line-clamp-3">{review.comment}</p>
                                             <p className="text-xs text-gray-400">
-                                                {new Date(review.date).toLocaleDateString('vi-VN')}
+                                                {formatDate(review.date)}
                                             </p>
                                         </div>
                                     ))
@@ -724,21 +731,26 @@ export const AdvisorProfile: React.FC = () => {
                                         />
                                     </div>
                                 </div>
-                                {previewUrl && (
-                                    <div className="relative mb-4 rounded-lg overflow-hidden max-h-80 w-fit">
-                                        <img src={previewUrl} alt="Preview" className="max-w-full h-auto object-contain rounded-lg border border-gray-100" />
-                                        <button
-                                            onClick={removeImage}
-                                            className="absolute top-2 right-2 p-1 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
-                                        >
-                                            <X className="w-4 h-4" />
-                                        </button>
+                                {previewUrls.length > 0 && (
+                                    <div className="flex gap-2 overflow-x-auto pb-2 mb-4 no-scrollbar max-w-full">
+                                        {previewUrls.map((url, index) => (
+                                            <div key={index} className="relative shrink-0 rounded-lg overflow-hidden h-32 w-32 group">
+                                                <img src={url} alt={`Preview ${index}`} className="w-full h-full object-cover border border-gray-100" />
+                                                <button
+                                                    onClick={() => removeImage(index)}
+                                                    className="absolute top-1 right-1 p-1 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors opacity-0 group-hover:opacity-100"
+                                                >
+                                                    <X className="w-3 h-3" />
+                                                </button>
+                                            </div>
+                                        ))}
                                     </div>
                                 )}
                                 <div className="flex justify-between items-center border-t border-gray-100 pt-3">
                                     <div className="flex gap-2">
                                         <input
                                             type="file"
+                                            multiple
                                             ref={fileInputRef}
                                             onChange={handleImageSelect}
                                             accept="image/*"
@@ -748,7 +760,7 @@ export const AdvisorProfile: React.FC = () => {
                                             onClick={() => fileInputRef.current?.click()}
                                             className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-gray-50 text-gray-600 text-sm font-medium transition-colors"
                                         >
-                                            <ImageIcon className="w-5 h-5 text-green-500" /> Ảnh/Video
+                                            <ImageIcon className="w-5 h-5 text-green-500" /> Ảnh
                                         </button>
                                         <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-gray-50 text-gray-600 text-sm font-medium transition-colors">
                                             <Calendar className="w-5 h-5 text-amber-500" /> Sự kiện
@@ -756,7 +768,7 @@ export const AdvisorProfile: React.FC = () => {
                                     </div>
                                     <button
                                         onClick={handleCreatePost}
-                                        disabled={(!newPostContent.trim() && !selectedImage) || isPosting}
+                                        disabled={(!newPostContent.trim() && selectedImages.length === 0) || isPosting}
                                         className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-4 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm"
                                     >
                                         {isPosting ? 'Đang đăng...' : 'Đăng'}

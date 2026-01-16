@@ -216,5 +216,50 @@ export const advisorService = {
             console.error("Error adding review: ", error);
             throw error;
         }
+    },
+
+    getReview: async (advisorId: string, reviewId: string) => {
+        try {
+            const advisorRef = doc(db, ADVISORS_COLLECTION, advisorId);
+            const advisorSnap = await getDoc(advisorRef);
+            if (advisorSnap.exists()) {
+                const advisorData = advisorSnap.data() as Advisor;
+                return advisorData.reviews?.find(r => r.id === reviewId) || null;
+            }
+            return null;
+        } catch (error) {
+            console.error("Error getting review: ", error);
+            return null;
+        }
+    },
+
+    updateReview: async (advisorId: string, updatedReview: any) => {
+        try {
+            const advisorRef = doc(db, ADVISORS_COLLECTION, advisorId);
+            const advisorSnap = await getDoc(advisorRef);
+
+            if (advisorSnap.exists()) {
+                const advisorData = advisorSnap.data() as Advisor;
+                const reviews = advisorData.reviews || [];
+                const reviewIndex = reviews.findIndex(r => r.id === updatedReview.id);
+
+                if (reviewIndex > -1) {
+                    reviews[reviewIndex] = updatedReview;
+
+                    const newReviewCount = reviews.length;
+                    const totalRating = reviews.reduce((sum, r) => sum + r.rating, 0);
+                    const newRating = totalRating / newReviewCount;
+
+                    await updateDoc(advisorRef, {
+                        reviews: reviews,
+                        rating: newRating,
+                        reviewCount: newReviewCount
+                    });
+                }
+            }
+        } catch (error) {
+            console.error("Error updating review: ", error);
+            throw error;
+        }
     }
 };

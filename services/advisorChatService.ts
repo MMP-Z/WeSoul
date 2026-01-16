@@ -1,6 +1,7 @@
 import { db } from '../firebaseConfig';
 import { collection, addDoc, query, where, orderBy, onSnapshot, serverTimestamp, updateDoc, doc, getDocs, or, setDoc, deleteDoc, collectionGroup, increment } from 'firebase/firestore';
 import { ChatMessage } from '../types';
+import { notificationService } from './notificationService';
 
 const MESSAGES_COLLECTION = 'advisor_messages';
 
@@ -87,6 +88,18 @@ export const advisorChatService = {
                 ...message,
                 timestamp: serverTimestamp(),
                 isRead: false
+            });
+
+            // Create Notification
+            await notificationService.createNotification({
+                userId: message.receiverId,
+                title: message.senderName || 'Tin nhắn mới',
+                content: message.message.length > 50 ? message.message.substring(0, 50) + '...' : message.message,
+                type: 'message',
+                link: '/messages',
+                senderId: message.senderId,
+                senderName: message.senderName || 'Unknown',
+                senderAvatar: '/favicon.png' // Default to logo as we don't have sender avatar in message payload
             });
         } catch (error) {
             console.error("Error sending message:", error);

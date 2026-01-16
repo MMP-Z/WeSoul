@@ -22,6 +22,7 @@ import { AdvisorMarket } from './pages/AdvisorMarket';
 import { AdvisorProfile } from './pages/AdvisorProfile';
 import { Messages } from './pages/Messages';
 import { Connections } from './pages/Connections';
+import { PostDetail } from './pages/PostDetail';
 import ScrollToTop from './components/ScrollToTop';
 
 const ProfileRedirect: React.FC = () => {
@@ -61,6 +62,7 @@ const Layout: React.FC = () => {
       {!isAuthPage && <Navbar />}
       <Routes>
         <Route path="/" element={<Feed />} />
+        <Route path="/post/:postId" element={<PostDetail />} />
         <Route path="/ai-divination" element={<AIDivination />} />
         <Route path="/market" element={<AdvisorMarket />} />
         <Route path="/profile/:id" element={<AdvisorProfile />} />

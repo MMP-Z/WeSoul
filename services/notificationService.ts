@@ -19,10 +19,13 @@ export interface Notification {
     userId: string;
     title: string;
     content: string;
-    type: 'booking' | 'promo' | 'system' | 'message';
+    type: 'booking' | 'promo' | 'system' | 'message' | 'post' | 'comment' | 'like' | 'follow';
     isRead: boolean;
     createdAt: any;
     link?: string;
+    senderId?: string;
+    senderName?: string;
+    senderAvatar?: string;
 }
 
 const NOTIFICATIONS_COLLECTION = 'notifications';

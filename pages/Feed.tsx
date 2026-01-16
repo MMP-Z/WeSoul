@@ -72,35 +72,44 @@ export const Feed: React.FC = () => {
     // Post Creation State
     const [newPostContent, setNewPostContent] = useState('');
     const [isPosting, setIsPosting] = useState(false);
-    const [selectedImage, setSelectedImage] = useState<File | null>(null);
-    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [selectedImages, setSelectedImages] = useState<File[]>([]);
+    const [previewUrls, setPreviewUrls] = useState<string[]>([]);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
 
     const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            const file = e.target.files[0];
-            setSelectedImage(file);
-            setPreviewUrl(URL.createObjectURL(file));
+        if (e.target.files && e.target.files.length > 0) {
+            const newFiles = Array.from(e.target.files);
+            const newUrls = newFiles.map(file => URL.createObjectURL(file));
+
+            setSelectedImages(prev => [...prev, ...newFiles]);
+            setPreviewUrls(prev => [...prev, ...newUrls]);
         }
     };
 
-    const removeImage = () => {
-        setSelectedImage(null);
-        setPreviewUrl(null);
+    const removeImage = (index: number) => {
+        setSelectedImages(prev => prev.filter((_, i) => i !== index));
+        setPreviewUrls(prev => {
+            const newUrls = [...prev];
+            URL.revokeObjectURL(newUrls[index]); // Cleanup memory
+            return newUrls.filter((_, i) => i !== index);
+        });
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
         }
     };
 
     const handleCreatePost = async () => {
-        if ((!newPostContent.trim() && !selectedImage) || !currentUser) return;
+        if ((!newPostContent.trim() && selectedImages.length === 0) || !currentUser) return;
 
         setIsPosting(true);
         try {
             let imageUrls: string[] = [];
-            if (selectedImage) {
-                const url = await imageUploadService.uploadImage(selectedImage);
-                if (url) imageUrls.push(url);
+
+            // Upload all images in parallel
+            if (selectedImages.length > 0) {
+                const uploadPromises = selectedImages.map(file => imageUploadService.uploadImage(file));
+                const results = await Promise.all(uploadPromises);
+                imageUrls = results.filter((url): url is string => url !== null);
             }
 
             // Create Post
@@ -115,9 +124,7 @@ export const Feed: React.FC = () => {
                 createdAt: new Date().toISOString()
             });
 
-            // Optimistically add to feed (Self-post gets max score + 50 for relationship implicitly?)
-            // Actually, we should just prepend it.
-            // But we need the full post object.
+            // Optimistically add to feed
             const newPost: AdvisorPost = {
                 id: newPostId,
                 advisorId: currentUser.uid,
@@ -128,14 +135,15 @@ export const Feed: React.FC = () => {
                 images: imageUrls,
                 likes: 0,
                 comments: 0,
-                timestamp: { seconds: Date.now() / 1000, nanoseconds: 0 }, // Fake timestamp
+                timestamp: { seconds: Date.now() / 1000, nanoseconds: 0 },
                 createdAt: new Date().toISOString()
             };
 
             setPosts(prev => [newPost, ...prev]);
 
             setNewPostContent('');
-            removeImage();
+            setSelectedImages([]);
+            setPreviewUrls([]);
             toast.success("Đăng bài thành công!");
 
         } catch (error) {
@@ -291,9 +299,17 @@ export const Feed: React.FC = () => {
                     <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm mb-6 mt-[5px] animate-in fade-in slide-in-from-top-4 duration-500">
                         <div className="flex gap-3 mb-3">
                             {currentUser.photoURL ? (
-                                <img src={currentUser.photoURL} className="w-10 h-10 rounded-full object-cover border border-gray-200" alt="User" />
+                                <img
+                                    src={currentUser.photoURL || `https://ui-avatars.com/api/?name=${currentUser.displayName}&background=random`}
+                                    alt="Me"
+                                    className="w-10 h-10 rounded-full border border-gray-200 object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                                    onClick={() => navigate(`/profile/${currentUser.uid}`)}
+                                />
                             ) : (
-                                <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold">
+                                <div
+                                    className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold cursor-pointer hover:opacity-90 transition-opacity"
+                                    onClick={() => navigate(`/profile/${currentUser.uid}`)}
+                                >
                                     {currentUser.displayName?.charAt(0) || 'U'}
                                 </div>
                             )}
@@ -310,15 +326,20 @@ export const Feed: React.FC = () => {
                             </div>
                         </div>
 
-                        {previewUrl && (
-                            <div className="relative mb-4 rounded-lg overflow-hidden max-h-80 w-fit">
-                                <img src={previewUrl} alt="Preview" className="max-w-full h-auto object-contain rounded-lg border border-gray-100" />
-                                <button
-                                    onClick={removeImage}
-                                    className="absolute top-2 right-2 p-1 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
-                                >
-                                    <X className="w-4 h-4" />
-                                </button>
+                        {previewUrls.length > 0 && (
+                            <div className="flex gap-2 overflow-x-auto pb-2 mb-4 no-scrollbar">
+                                {previewUrls.map((url, index) => (
+                                    <div key={index} className="relative shrink-0 rounded-lg overflow-hidden h-32 w-32 group">
+                                        <img src={url} alt={`Preview ${index}`} className="w-full h-full object-cover border border-gray-100" />
+                                        <button
+                                            onClick={() => removeImage(index)}
+                                            className="absolute top-1 right-1 p-1 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors opacity-0 group-hover:opacity-100"
+                                        >
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                ))}
+                                {/* Add more button placeholder if needed */}
                             </div>
                         )}
 
@@ -326,6 +347,7 @@ export const Feed: React.FC = () => {
                             <div className="flex gap-2">
                                 <input
                                     type="file"
+                                    multiple
                                     ref={fileInputRef}
                                     onChange={handleImageSelect}
                                     accept="image/*"
@@ -335,7 +357,7 @@ export const Feed: React.FC = () => {
                                     onClick={() => fileInputRef.current?.click()}
                                     className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-gray-50 text-gray-600 text-sm font-medium transition-colors"
                                 >
-                                    <ImageIcon className="w-5 h-5 text-green-500" /> <span className="hidden sm:inline">Ảnh/Video</span>
+                                    <ImageIcon className="w-5 h-5 text-green-500" /> <span className="hidden sm:inline">Ảnh</span>
                                 </button>
                                 <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-gray-50 text-gray-600 text-sm font-medium transition-colors">
                                     <Calendar className="w-5 h-5 text-amber-500" /> <span className="hidden sm:inline">Sự kiện</span>
@@ -343,7 +365,7 @@ export const Feed: React.FC = () => {
                             </div>
                             <button
                                 onClick={handleCreatePost}
-                                disabled={(!newPostContent.trim() && !selectedImage) || isPosting}
+                                disabled={(!newPostContent.trim() && selectedImages.length === 0) || isPosting}
                                 className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-6 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-all active:scale-95 shadow-indigo-200"
                             >
                                 {isPosting ? 'Đang gửi...' : 'Đăng'} <Send className="w-4 h-4 ml-1" />

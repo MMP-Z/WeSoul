@@ -208,9 +208,7 @@ export const Navbar: React.FC = () => {
       <div className="hidden md:block max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center shadow-md">
-              <Moon className="w-5 h-5 text-white" fill="white" />
-            </div>
+            <img src="/favicon.png" alt="Logo" className="w-10 h-10 object-contain rounded-full shadow-sm" />
             <span className="text-xl font-serif font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600">
               WeSoul
             </span>
@@ -374,7 +372,7 @@ export const Navbar: React.FC = () => {
             <>
               <div className="flex items-center gap-2" onClick={() => navigate('/')}>
                 {/* Logo Text Only - Clean like FB */}
-                <span className="text-2xl font-serif font-black text-indigo-600 tracking-tight">
+                <span className="text-2xl font-serif font-black text-indigo-600" style={{ WebkitTextStroke: '1px currentColor' }}>
                   WeSoul
                 </span>
               </div>
@@ -481,7 +479,7 @@ export const Navbar: React.FC = () => {
                 </span>
               )}
             </div>
-            {isActive('/notifications') && <div className="absolute -bottom-[10px] left-0 right-0 h-0.5 bg-indigo-600"></div>}
+            {isActive('/notifications') && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600"></div>}
           </div>
 
           {/* Menu Tab */}

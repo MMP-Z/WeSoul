@@ -8,9 +8,11 @@ import {
     orderBy,
     Timestamp,
     updateDoc,
-    doc
+    doc,
+    getDoc
 } from 'firebase/firestore';
 import { Booking, BookingStatus } from '../types';
+import { notificationService } from './notificationService';
 
 const BOOKINGS_COLLECTION = 'bookings';
 
@@ -21,6 +23,23 @@ export const bookingService = {
                 ...booking,
                 createdAt: new Date().toISOString()
             });
+
+            // Notify Advisor
+            try {
+                await notificationService.createNotification({
+                    userId: booking.advisorId,
+                    title: 'Yêu cầu đặt lịch mới',
+                    content: `Bạn nhận được yêu cầu đặt lịch mới từ khách hàng ${booking.userName || 'Ẩn danh'}.`,
+                    type: 'booking',
+                    link: '/dashboard-advisor', // Or booking detail link
+                    senderId: booking.userId,
+                    senderName: booking.userName,
+                    senderAvatar: booking.userAvatar || '/favicon.png'
+                });
+            } catch (err) {
+                console.error("Error notifying advisor of booking:", err);
+            }
+
             return docRef.id;
         } catch (error) {
             console.error("Error creating booking:", error);
@@ -91,6 +110,40 @@ export const bookingService = {
         try {
             const bookingRef = doc(db, BOOKINGS_COLLECTION, bookingId);
             await updateDoc(bookingRef, { status });
+
+            // Notify User of Status Change
+            try {
+                const bookingSnap = await getDoc(bookingRef);
+                if (bookingSnap.exists()) {
+                    const bookingData = bookingSnap.data() as Booking;
+                    let title = 'Cập nhật trạng thái lịch hẹn';
+                    let content = `Trạng thái lịch hẹn của bạn đã chuyển sang: ${status}`;
+
+                    if (status === BookingStatus.CONFIRMED) {
+                        title = 'Lịch hẹn đã được xác nhận';
+                        content = `Chuyên gia ${bookingData.advisorName} đã xác nhận lịch hẹn của bạn. Vui lòng chuẩn bị đúng giờ.`;
+                    } else if (status === BookingStatus.CANCELLED) {
+                        title = 'Lịch hẹn đã bị hủy';
+                        content = `Lịch hẹn với ${bookingData.advisorName} đã bị hủy.`;
+                    } else if (status === BookingStatus.COMPLETED) {
+                        title = 'Lịch hẹn hoàn thành';
+                        content = `Buổi tư vấn với ${bookingData.advisorName} đã kết thúc. Cảm ơn bạn đã sử dụng dịch vụ.`;
+                    }
+
+                    await notificationService.createNotification({
+                        userId: bookingData.userId,
+                        title: title,
+                        content: content,
+                        type: 'booking',
+                        link: '/history', // Or booking detail
+                        senderId: bookingData.advisorId,
+                        senderName: bookingData.advisorName,
+                        senderAvatar: bookingData.advisorAvatar || '/favicon.png'
+                    });
+                }
+            } catch (err) {
+                console.error("Error notifying user of booking status:", err);
+            }
         } catch (error) {
             console.error("Error updating booking status:", error);
             throw error;
